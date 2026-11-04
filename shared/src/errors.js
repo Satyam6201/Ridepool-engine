@@ -1,37 +1,38 @@
 export class AppError extends Error {
-  constructor(msg, status = 500) {
-    super(msg);
-    this.status = status;
-    this.isPublic = true;
+  constructor(message, statusCode = 500) {
+    super(message);
+    this.statusCode = statusCode;
+    this.isOperational = true;
+    Error.captureStackTrace(this, this.constructor);
   }
 }
 
-export class BadRequest extends AppError {
-  constructor(msg = "Bad request") {
-    super(msg, 400);
+export class BadRequestError extends AppError {
+  constructor(message = "Bad request") {
+    super(message, 400);
   }
 }
 
-export class Unauthorized extends AppError {
-  constructor(msg = "Unauthorized") {
-    super(msg, 401);
+export class UnauthorizedError extends AppError {
+  constructor(message = "Unauthorized") {
+    super(message, 401);
   }
 }
 
-export class Forbidden extends AppError {
-  constructor(msg = "Forbidden") {
-    super(msg, 403);
+export class ForbiddenError extends AppError {
+  constructor(message = "Forbidden") {
+    super(message, 403);
   }
 }
 
-export class NotFound extends AppError {
-  constructor(msg = "Not found") {
-    super(msg, 404);
+export class NotFoundError extends AppError {
+  constructor(message = "Resource not found") {
+    super(message, 404);
   }
 }
 
-export class Conflict extends AppError {
-  constructor(msg = "Conflict") {
-    super(msg, 409);
+export class ConflictError extends AppError {
+  constructor(message = "Conflict") {
+    super(message, 409);
   }
 }

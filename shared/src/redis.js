@@ -1,13 +1,22 @@
 import Redis from "ioredis";
-import { log } from "./logger.js";
+import { logger } from "./logger.js";
 
-export function getRedis(url) {
-  const r = new Redis(url, {
+export function createRedisClient(redisUrl) {
+  const client = new Redis(redisUrl, {
     maxRetriesPerRequest: 3,
-    retryStrategy: (t) => Math.min(t * 200, 2000)
+    retryStrategy(times) {
+      const delay = Math.min(times * 200, 2000);
+      return delay;
+    }
   });
 
-  r.on("connect", () => log.info("Redis connected"));
-  r.on("error", (err) => log.error(`Redis error: ${err.message}`));
-  return r;
+  client.on("connect", () => {
+    logger.info("Connected to Redis");
+  });
+
+  client.on("error", (err) => {
+    logger.error("Redis connection error", { error: err.message });
+  });
+
+  return client;
 }

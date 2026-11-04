@@ -1,32 +1,51 @@
-const HIDE = ["password", "token", "refreshtoken", "authorization", "secret"];
+const SENSITIVE_FIELDS = ["password", "token", "refreshToken", "authorization", "secret"];
 
-function mask(obj) {
-  if (!obj || typeof obj !== "object") return obj;
-  if (Array.isArray(obj)) return obj.map(mask);
-
-  const clean = {};
-  for (const [k, v] of Object.entries(obj)) {
-    clean[k] = HIDE.includes(k.toLowerCase()) ? "[HIDDEN]" : mask(v);
+function sanitize(data) {
+  if (!data || typeof data !== "object") {
+    return data;
   }
-  return clean;
+
+  if (Array.isArray(data)) {
+    return data.map((item) => sanitize(item));
+  }
+
+  const sanitized = {};
+  for (const [key, value] of Object.entries(data)) {
+    if (SENSITIVE_FIELDS.includes(key.toLowerCase())) {
+      sanitized[key] = "[REDACTED]";
+    } else if (typeof value === "object" && value !== null) {
+      sanitized[key] = sanitize(value);
+    } else {
+      sanitized[key] = value;
+    }
+  }
+
+  return sanitized;
 }
 
-function write(level, msg, extra) {
-  const payload = {
-    time: new Date().toISOString(),
+function formatOutput(level, message, meta = {}) {
+  const sanitizedMeta = sanitize(meta);
+  return JSON.stringify({
+    timestamp: new Date().toISOString(),
     level,
-    msg,
-    ...(extra ? { extra: mask(extra) } : {})
-  };
-  const fn = level === "error" ? console.error : level === "warn" ? console.warn : console.log;
-  fn(JSON.stringify(payload));
+    message,
+    ...sanitizedMeta
+  });
 }
 
-export const log = {
-  info: (msg, extra) => write("info", msg, extra),
-  warn: (msg, extra) => write("warn", msg, extra),
-  error: (msg, extra) => write("error", msg, extra),
-  debug: (msg, extra) => {
-    if (process.env.NODE_ENV !== "production") write("debug", msg, extra);
+export const logger = {
+  info: (message, meta) => {
+    console.log(formatOutput("info", message, meta));
+  },
+  warn: (message, meta) => {
+    console.warn(formatOutput("warn", message, meta));
+  },
+  error: (message, meta) => {
+    console.error(formatOutput("error", message, meta));
+  },
+  debug: (message, meta) => {
+    if (process.env.NODE_ENV !== "production") {
+      console.debug(formatOutput("debug", message, meta));
+    }
   }
 };

@@ -3,21 +3,21 @@ import { BrowserRouter, Routes, Route, Link } from "react-router-dom";
 
 function Home() {
   return (
-    <main style={{ padding: "1.5rem" }}>
-      <h2>Ride Dispatch</h2>
-      <p>Pool dispatch service running.</p>
-    </main>
+    <div style={{ padding: "2rem" }}>
+      <h1>Ride Dispatch Platform</h1>
+      <p>System operational. Microservice dispatch and pooling platform.</p>
+    </div>
   );
 }
 
 export default function App() {
   return (
     <BrowserRouter>
-      <header style={{ padding: "1rem", background: "#111827", color: "#fff" }}>
-        <Link to="/" style={{ color: "#fff", textDecoration: "none" }}>
-          Uber Pool Dispatch
+      <nav style={{ padding: "1rem", backgroundColor: "#1f2937", color: "#ffffff" }}>
+        <Link to="/" style={{ color: "#ffffff", textDecoration: "none", fontWeight: "bold" }}>
+          Pool Dispatch
         </Link>
-      </header>
+      </nav>
       <Routes>
         <Route path="/" element={<Home />} />
       </Routes>

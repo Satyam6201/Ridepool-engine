@@ -4,9 +4,9 @@ import helmet from "helmet";
 import cors from "cors";
 import { Server } from "socket.io";
 import { env } from "./config/env.js";
-import healthRoute from "./routes/health.js";
-import { errorHandler } from "./middleware/error.js";
-import { log } from "shared";
+import healthRoutes from "./routes/health.routes.js";
+import { errorHandler } from "./middleware/errorHandler.js";
+import { logger } from "shared";
 
 const app = express();
 
@@ -14,21 +14,40 @@ app.use(helmet());
 app.use(cors({ origin: env.CORS_ORIGIN }));
 app.use(express.json({ limit: "10kb" }));
 
-app.use(healthRoute);
+app.use(healthRoutes);
 app.use(errorHandler);
 
-const server = http.createServer(app);
-const io = new Server(server, {
-  cors: { origin: env.CORS_ORIGIN, methods: ["GET", "POST"] }
+const httpServer = http.createServer(app);
+
+const io = new Server(httpServer, {
+  cors: {
+    origin: env.CORS_ORIGIN,
+    methods: ["GET", "POST"]
+  }
 });
 
 io.on("connection", (socket) => {
-  log.info(`Client connected: ${socket.id}`);
-  socket.on("disconnect", () => log.info(`Client disconnected: ${socket.id}`));
+  logger.info("Realtime client connected", { socketId: socket.id });
+
+  socket.on("disconnect", () => {
+    logger.info("Realtime client disconnected", { socketId: socket.id });
+  });
 });
 
-server.listen(env.PORT, () => {
-  log.info(`realtime-service started on port ${env.PORT}`);
+httpServer.listen(env.PORT, () => {
+  logger.info("realtime-service started", { port: env.PORT, env: env.NODE_ENV });
 });
 
-process.on("SIGTERM", () => server.close(() => process.exit(0)));
+process.on("SIGTERM", () => {
+  logger.info("SIGTERM received, closing server");
+  httpServer.close(() => {
+    process.exit(0);
+  });
+});
+
+process.on("SIGINT", () => {
+  logger.info("SIGINT received, closing server");
+  httpServer.close(() => {
+    process.exit(0);
+  });
+});

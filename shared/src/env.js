@@ -1,11 +1,20 @@
-import { log } from "./logger.js";
+import { logger } from "./logger.js";
 
-export function loadEnv(schema, source = process.env) {
-  const res = schema.safeParse(source);
-  if (!res.success) {
-    const issues = res.error.issues.map((i) => `${i.path.join(".")}: ${i.message}`);
-    log.error(`Invalid env: ${issues.join(", ")}`);
+export function validateEnv(schema, envData = process.env) {
+  const result = schema.safeParse(envData);
+
+  if (!result.success) {
+    const errorDetails = result.error.errors.map((err) => ({
+      field: err.path.join("."),
+      message: err.message
+    }));
+
+    logger.error("Environment validation failed on startup", {
+      errors: errorDetails
+    });
+
     process.exit(1);
   }
-  return res.data;
+
+  return result.data;
 }

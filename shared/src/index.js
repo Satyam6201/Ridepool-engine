@@ -1,12 +1,12 @@
-export { log } from "./logger.js";
+export { logger } from "./logger.js";
 export {
   AppError,
-  BadRequest,
-  Unauthorized,
-  Forbidden,
-  NotFound,
-  Conflict
+  BadRequestError,
+  UnauthorizedError,
+  ForbiddenError,
+  NotFoundError,
+  ConflictError
 } from "./errors.js";
-export { loadEnv } from "./env.js";
-export { getKafka } from "./kafka.js";
-export { getRedis } from "./redis.js";
+export { validateEnv } from "./env.js";
+export { createKafkaClient } from "./kafka.js";
+export { createRedisClient } from "./redis.js";

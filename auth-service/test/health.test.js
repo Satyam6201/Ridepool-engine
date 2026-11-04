@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert";
 
-test("auth-service health placeholder", () => {
-  assert.equal(1 + 1, 2);
+test("health check placeholder test", () => {
+  assert.strictEqual(true, true);
 });
