@@ -56,7 +56,7 @@ services:
   auth-service:
     build:
       context: .
-      dockerfile: auth-service/Dockerfile
+      dockerfile: services/auth-service/Dockerfile
     restart: unless-stopped
     environment:
       NODE_ENV: production
@@ -80,7 +80,7 @@ services:
   driver-service:
     build:
       context: .
-      dockerfile: driver-service/Dockerfile
+      dockerfile: services/driver-service/Dockerfile
     restart: unless-stopped
     environment:
       NODE_ENV: production
@@ -102,7 +102,7 @@ services:
   trip-service:
     build:
       context: .
-      dockerfile: trip-service/Dockerfile
+      dockerfile: services/trip-service/Dockerfile
     restart: unless-stopped
     environment:
       NODE_ENV: production
@@ -124,7 +124,7 @@ services:
   matching-service:
     build:
       context: .
-      dockerfile: matching-service/Dockerfile
+      dockerfile: services/matching-service/Dockerfile
     restart: unless-stopped
     environment:
       NODE_ENV: production
@@ -146,7 +146,7 @@ services:
   pricing-service:
     build:
       context: .
-      dockerfile: pricing-service/Dockerfile
+      dockerfile: services/pricing-service/Dockerfile
     restart: unless-stopped
     environment:
       NODE_ENV: production
@@ -168,7 +168,7 @@ services:
   realtime-service:
     build:
       context: .
-      dockerfile: realtime-service/Dockerfile
+      dockerfile: services/realtime-service/Dockerfile
     restart: unless-stopped
     environment:
       NODE_ENV: production
