@@ -1,3 +1,10 @@
+process.env.NODE_ENV = "test";
+process.env.JWT_ACCESS_SECRET = process.env.JWT_ACCESS_SECRET || "super_secret_access_jwt_key_at_least_32_chars";
+process.env.JWT_REFRESH_SECRET = process.env.JWT_REFRESH_SECRET || "super_secret_refresh_jwt_key_at_least_32_chars";
+process.env.MONGO_URI = process.env.MONGO_URI || "mongodb://localhost:27017/auth_test";
+process.env.REDIS_URL = process.env.REDIS_URL || "redis://localhost:6379";
+process.env.KAFKA_BROKERS = process.env.KAFKA_BROKERS || "localhost:9092";
+
 import test from "node:test";
 import assert from "node:assert";
 import { signAccessToken, verifyAccessToken } from "../src/services/token.js";

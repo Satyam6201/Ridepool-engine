@@ -21,11 +21,15 @@ export function createKafkaClient({ clientId, brokers }) {
     logger.info("Kafka producer connected successfully", { clientId });
   }
 
-  async function publish(topic, message) {
+  async function publish(topic, message, key = null) {
     const payload = typeof message === "string" ? message : JSON.stringify(message);
+    const msg = { value: payload };
+    if (key !== null && key !== undefined) {
+      msg.key = String(key);
+    }
     await producer.send({
       topic,
-      messages: [{ value: payload }]
+      messages: [msg]
     });
   }
 

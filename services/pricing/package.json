@@ -3,8 +3,9 @@
   "version": "1.0.0",
   "type": "module",
   "scripts": {
-    "start": "node src/server.js",`n    "dev": "node --watch src/server.js",
-    "test": "node --test test/health.test.js"
+    "start": "node src/server.js",
+    "dev": "node --watch src/server.js",
+    "test": "node --test test/**/*.test.js"
   },
   "dependencies": {
     "cors": "^2.8.5",
@@ -16,5 +17,3 @@
     "zod": "^3.23.8"
   }
 }
-
-

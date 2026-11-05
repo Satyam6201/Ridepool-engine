@@ -1,13 +1,17 @@
 import Redis from "ioredis";
 import { logger } from "./logger.js";
 
-export function createRedisClient(redisUrl) {
+export function createRedisClient(redisUrl, options = {}) {
   const client = new Redis(redisUrl, {
     maxRetriesPerRequest: 3,
+    lazyConnect: true,
     retryStrategy(times) {
-      const delay = Math.min(times * 200, 2000);
-      return delay;
-    }
+      if (times > 3) {
+        return null;
+      }
+      return Math.min(times * 200, 2000);
+    },
+    ...options
   });
 
   client.on("connect", () => {
