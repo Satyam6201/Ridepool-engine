@@ -59,7 +59,7 @@ services:
   auth-service:
     build:
       context: .
-      dockerfile: auth-service/Dockerfile
+      dockerfile: services/auth/Dockerfile
     container_name: auth-service
     restart: unless-stopped
     environment:
@@ -84,7 +84,7 @@ services:
   driver-service:
     build:
       context: .
-      dockerfile: driver-service/Dockerfile
+      dockerfile: services/driver/Dockerfile
     container_name: driver-service
     restart: unless-stopped
     environment:
@@ -107,7 +107,7 @@ services:
   trip-service:
     build:
       context: .
-      dockerfile: trip-service/Dockerfile
+      dockerfile: services/trip/Dockerfile
     container_name: trip-service
     restart: unless-stopped
     environment:
@@ -130,7 +130,7 @@ services:
   matching-service:
     build:
       context: .
-      dockerfile: matching-service/Dockerfile
+      dockerfile: services/matching/Dockerfile
     container_name: matching-service
     restart: unless-stopped
     environment:
@@ -153,7 +153,7 @@ services:
   pricing-service:
     build:
       context: .
-      dockerfile: pricing-service/Dockerfile
+      dockerfile: services/pricing/Dockerfile
     container_name: pricing-service
     restart: unless-stopped
     environment:
@@ -176,7 +176,7 @@ services:
   realtime-service:
     build:
       context: .
-      dockerfile: realtime-service/Dockerfile
+      dockerfile: services/realtime/Dockerfile
     container_name: realtime-service
     restart: unless-stopped
     environment:
@@ -228,3 +228,4 @@ networks:
 volumes:
   mongo_data:
   redis_data:
+
