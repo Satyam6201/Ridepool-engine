@@ -1,6 +1,6 @@
 import { logger } from "./logger.js";
 
-const TOKEN_BUCKET_LUA = `
+const LUA_SCRIPT = `
 local key = KEYS[1]
 local capacity = tonumber(ARGV[1])
 local refillRate = tonumber(ARGV[2])
@@ -9,40 +9,36 @@ local requested = tonumber(ARGV[4])
 local ttl = tonumber(ARGV[5])
 
 local data = redis.call('HMGET', key, 'tokens', 'lastRefill')
-local currentTokens = tonumber(data[1])
+local tokens = tonumber(data[1])
 local lastRefill = tonumber(data[2])
 
-if currentTokens == nil then
-    currentTokens = capacity
+if tokens == nil then
+    tokens = capacity
     lastRefill = now
 else
     local elapsed = math.max(0, now - lastRefill)
-    local generated = elapsed * refillRate
-    currentTokens = math.min(capacity, currentTokens + generated)
+    tokens = math.min(capacity, tokens + (elapsed * refillRate))
     lastRefill = now
 end
 
-if currentTokens >= requested then
-    currentTokens = currentTokens - requested
-    redis.call('HMSET', key, 'tokens', currentTokens, 'lastRefill', lastRefill)
+if tokens >= requested then
+    tokens = tokens - requested
+    redis.call('HMSET', key, 'tokens', tokens, 'lastRefill', lastRefill)
     redis.call('EXPIRE', key, ttl)
-    return { 1, math.floor(currentTokens), 0 }
+    return { 1, math.floor(tokens), 0 }
 else
-    local missing = requested - currentTokens
+    local missing = requested - tokens
     local waitMs = math.ceil(missing / refillRate)
     local retryAfter = math.max(1, math.ceil(waitMs / 1000))
-    redis.call('HMSET', key, 'tokens', currentTokens, 'lastRefill', lastRefill)
+    redis.call('HMSET', key, 'tokens', tokens, 'lastRefill', lastRefill)
     redis.call('EXPIRE', key, ttl)
     return { 0, 0, retryAfter }
 end
 `;
 
 export const RATE_LIMIT_PRESETS = {
-  // Strict: 5 burst, 1 token every 10 seconds (0.0001 tokens/ms)
   login: { capacity: 5, refillRatePerMs: 0.0001, ttlSeconds: 900, name: "login" },
-  // High: 30 burst, 1 token every 500ms (0.002 tokens/ms)
   location: { capacity: 30, refillRatePerMs: 0.002, ttlSeconds: 300, name: "location" },
-  // Medium: 10 burst, 1 token every 2 seconds (0.0005 tokens/ms)
   trip: { capacity: 10, refillRatePerMs: 0.0005, ttlSeconds: 600, name: "trip" }
 };
 
@@ -54,25 +50,23 @@ export function createTokenBucketLimiter({
   ttlSeconds,
   keyPrefix = "rl"
 }) {
-  const config = typeof preset === "string" ? RATE_LIMIT_PRESETS[preset] || RATE_LIMIT_PRESETS.trip : preset;
-  const cap = capacity || config.capacity;
-  const rate = refillRatePerMs || config.refillRatePerMs;
-  const ttl = ttlSeconds || config.ttlSeconds || 3600;
+  const cfg = typeof preset === "string" ? RATE_LIMIT_PRESETS[preset] || RATE_LIMIT_PRESETS.trip : preset;
+  const cap = capacity || cfg.capacity;
+  const rate = refillRatePerMs || cfg.refillRatePerMs;
+  const ttl = ttlSeconds || cfg.ttlSeconds || 3600;
 
   return async (req, res, next) => {
-    if (!redis) {
-      return next();
-    }
+    if (!redis) return next();
 
     try {
-      const identifier = req.user?.id ? `usr:${req.user.id}` : `ip:${req.ip || req.headers["x-forwarded-for"] || "anon"}`;
-      const bucketKey = `${keyPrefix}:${config.name || "default"}:${identifier}`;
+      const id = req.user?.id ? `usr:${req.user.id}` : `ip:${req.ip || req.headers["x-forwarded-for"] || "anon"}`;
+      const bucket = `${keyPrefix}:${cfg.name || "default"}:${id}`;
       const now = Date.now();
 
-      const result = await redis.eval(
-        TOKEN_BUCKET_LUA,
+      const [allowed, remaining, retryAfter] = await redis.eval(
+        LUA_SCRIPT,
         1,
-        bucketKey,
+        bucket,
         cap,
         rate,
         now,
@@ -80,25 +74,18 @@ export function createTokenBucketLimiter({
         ttl
       );
 
-      const [allowed, remaining, retryAfter] = result;
-
       res.setHeader("X-RateLimit-Limit", cap);
       res.setHeader("X-RateLimit-Remaining", remaining);
 
-      if (allowed === 1) {
-        return next();
-      }
+      if (allowed === 1) return next();
 
       res.setHeader("Retry-After", retryAfter);
-      logger.warn("Rate limit exceeded", { identifier, bucketKey, retryAfter });
-
       return res.status(429).json({
         status: "error",
         message: "Too many requests, please try again later"
       });
     } catch (err) {
-      // Fail open so service remains functional during transient Redis errors
-      logger.error("Rate limiter evaluation failed", { error: err.message });
+      logger.error("Rate limiter failed", { error: err.message });
       next();
     }
   };

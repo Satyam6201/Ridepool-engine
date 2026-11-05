@@ -6,7 +6,8 @@ process.env.KAFKA_BROKERS = "localhost:9092";
 
 import test from "node:test";
 import assert from "node:assert";
-import { cleanupStaleDriversOnce } from "../src/services/cleanup.js";
+import { cleanStaleDrivers } from "../src/services/cleanup.js";
+import { GEO_KEY, PING_KEY } from "../src/services/consumer.js";
 
 function createMockRedis(initialPings = {}, initialGeo = new Set()) {
   const pings = { ...initialPings };
@@ -37,7 +38,7 @@ function createMockRedis(initialPings = {}, initialGeo = new Set()) {
     },
 
     async hgetall(key) {
-      if (key === "drivers:last_ping") {
+      if (key === PING_KEY) {
         return { ...pings };
       }
       return {};
@@ -92,13 +93,12 @@ test("consumer logic: available driver ping updates Redis GEO and last_ping", as
   const mockRedis = createMockRedis();
   mockRedis.statuses.set("drv_101", "available");
 
-  // Simulate consumer handler logic directly
   const status = await mockRedis.get("driver:status:drv_101");
   assert.strictEqual(status, "available");
 
   const multi = mockRedis.multi();
-  multi.geoadd("drivers:available", -122.4194, 37.7749, "drv_101");
-  multi.hset("drivers:last_ping", "drv_101", Date.now());
+  multi.geoadd(GEO_KEY, -122.4194, 37.7749, "drv_101");
+  multi.hset(PING_KEY, "drv_101", Date.now());
   await multi.exec();
 
   assert.strictEqual(mockRedis.geoSet.has("drv_101"), true);
@@ -113,10 +113,9 @@ test("consumer logic: offline or on_trip driver ping removes from Redis GEO", as
   const status = await mockRedis.get("driver:status:drv_202");
   assert.strictEqual(status, "offline");
 
-  // Offline drivers must be purged from GEO
   const multi = mockRedis.multi();
-  multi.zrem("drivers:available", "drv_202");
-  multi.hdel("drivers:last_ping", "drv_202");
+  multi.zrem(GEO_KEY, "drv_202");
+  multi.hdel(PING_KEY, "drv_202");
   await multi.exec();
 
   assert.strictEqual(mockRedis.geoSet.has("drv_202"), false);
@@ -127,21 +126,21 @@ test("consumer logic: offline or on_trip driver ping removes from Redis GEO", as
 test("cleanup job: removes stale drivers older than 30 seconds and keeps fresh drivers", async () => {
   const now = Date.now();
   const initialPings = {
-    fresh_driver: String(now - 5000),      // 5 seconds ago -> KEEP
-    stale_driver_1: String(now - 35000),  // 35 seconds ago -> REMOVE
-    stale_driver_2: String(now - 60000)   // 60 seconds ago -> REMOVE
+    fresh_driver: String(now - 5000),
+    stale_driver_1: String(now - 35000),
+    stale_driver_2: String(now - 60000)
   };
   const initialGeo = new Set(["fresh_driver", "stale_driver_1", "stale_driver_2"]);
 
   const mockRedis = createMockRedis(initialPings, initialGeo);
 
-  const removedCount = await cleanupStaleDriversOnce(mockRedis, 30000);
+  const count = await cleanStaleDrivers(mockRedis, 30000);
 
-  assert.strictEqual(removedCount, 2, "Should have removed exactly 2 stale drivers");
-  assert.strictEqual(mockRedis.geoSet.has("fresh_driver"), true, "Fresh driver must stay in GEO");
-  assert.strictEqual(mockRedis.geoSet.has("stale_driver_1"), false, "Stale driver 1 must be removed");
-  assert.strictEqual(mockRedis.geoSet.has("stale_driver_2"), false, "Stale driver 2 must be removed");
-  assert.ok(mockRedis.pings["fresh_driver"], "Fresh driver ping record must remain");
+  assert.strictEqual(count, 2);
+  assert.strictEqual(mockRedis.geoSet.has("fresh_driver"), true);
+  assert.strictEqual(mockRedis.geoSet.has("stale_driver_1"), false);
+  assert.strictEqual(mockRedis.geoSet.has("stale_driver_2"), false);
+  assert.ok(mockRedis.pings["fresh_driver"]);
   assert.strictEqual(Boolean(mockRedis.pings["stale_driver_1"]), false);
   assert.strictEqual(Boolean(mockRedis.pings["stale_driver_2"]), false);
 });

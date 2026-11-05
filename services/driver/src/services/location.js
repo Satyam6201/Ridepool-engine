@@ -1,69 +1,58 @@
-import { BadRequestError, logger } from "shared";
+import { BadRequestError } from "shared";
 import { redis } from "../config/redis.js";
-import { publishDriverLocation } from "../config/kafka.js";
-import { checkSpeedJump } from "../utils/geo.js";
+import { sendLocation } from "../config/kafka.js";
+import { checkSpeed } from "../utils/geo.js";
 
-/**
- * Validates GPS ping, checks for impossible speed jumps against cached previous ping,
- * stores the latest ping in Redis, and publishes to Kafka partitioned by driverId.
- */
-export async function validateAndPublishLocation(driverId, pingData) {
-  const currentTimestamp = pingData.timestamp
-    ? new Date(pingData.timestamp).getTime()
-    : Date.now();
-
-  const currentPing = {
-    lat: pingData.lat,
-    lng: pingData.lng,
-    heading: pingData.heading ?? 0,
-    speed: pingData.speed ?? 0,
-    timestamp: currentTimestamp
+export async function saveLocation(driverId, ping) {
+  const timestamp = ping.timestamp ? new Date(ping.timestamp).getTime() : Date.now();
+  const current = {
+    lat: ping.lat,
+    lng: ping.lng,
+    heading: ping.heading ?? 0,
+    speed: ping.speed ?? 0,
+    timestamp
   };
 
-  // Check against previous ping stored in Redis
-  const prevPingKey = `driver:ping:${driverId}`;
-  const prevPingRaw = await redis.hgetall(prevPingKey);
+  const pingKey = `driver:ping:${driverId}`;
+  const lastPing = await redis.hgetall(pingKey);
 
-  if (prevPingRaw && prevPingRaw.lat && prevPingRaw.lng && prevPingRaw.timestamp) {
-    const prevPing = {
-      lat: Number(prevPingRaw.lat),
-      lng: Number(prevPingRaw.lng),
-      timestamp: Number(prevPingRaw.timestamp)
+  if (lastPing?.lat && lastPing?.lng && lastPing?.timestamp) {
+    const prev = {
+      lat: Number(lastPing.lat),
+      lng: Number(lastPing.lng),
+      timestamp: Number(lastPing.timestamp)
     };
 
-    const speedCheck = checkSpeedJump(prevPing, currentPing);
-    if (!speedCheck.valid) {
-      logger.warn("Location ping rejected", { driverId, reason: speedCheck.reason });
-      throw new BadRequestError(speedCheck.reason);
+    const check = checkSpeed(prev, current);
+    if (!check.valid) {
+      throw new BadRequestError(check.reason);
     }
 
-    if (speedCheck.speedMps && !pingData.speed) {
-      currentPing.speed = Math.round(speedCheck.speedMps * 3.6);
+    if (check.speed && !ping.speed) {
+      current.speed = Math.round(check.speed * 3.6);
     }
   }
 
-  // Update cached latest ping in Redis (1 hour TTL)
   await redis
     .multi()
-    .hset(prevPingKey, {
-      lat: currentPing.lat,
-      lng: currentPing.lng,
-      heading: currentPing.heading,
-      speed: currentPing.speed,
-      timestamp: currentPing.timestamp
+    .hset(pingKey, {
+      lat: current.lat,
+      lng: current.lng,
+      heading: current.heading,
+      speed: current.speed,
+      timestamp: current.timestamp
     })
-    .expire(prevPingKey, 3600)
+    .expire(pingKey, 3600)
     .exec();
 
-  // Fast publish to Kafka partitioned by driverId
   const payload = {
     driverId,
-    lat: currentPing.lat,
-    lng: currentPing.lng,
-    heading: currentPing.heading,
-    speed: currentPing.speed,
-    timestamp: new Date(currentPing.timestamp).toISOString()
+    lat: current.lat,
+    lng: current.lng,
+    heading: current.heading,
+    speed: current.speed,
+    timestamp: new Date(current.timestamp).toISOString()
   };
 
-  await publishDriverLocation(driverId, payload);
+  await sendLocation(driverId, payload);
 }

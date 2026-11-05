@@ -1,45 +1,16 @@
 import mongoose from "mongoose";
 
-const locationHistorySchema = new mongoose.Schema(
-  {
-    driverId: {
-      type: String,
-      required: true,
-      index: true
-    },
-    location: {
-      type: {
-        type: String,
-        enum: ["Point"],
-        default: "Point"
-      },
-      coordinates: {
-        type: [Number], // [longitude, latitude]
-        required: true
-      }
-    },
-    heading: {
-      type: Number,
-      min: 0,
-      max: 360,
-      default: 0
-    },
-    speed: {
-      type: Number,
-      min: 0,
-      default: 0
-    },
-    timestamp: {
-      type: Date,
-      required: true
-    }
+const locationHistorySchema = new mongoose.Schema({
+  driverId: { type: String, required: true, index: true },
+  location: {
+    type: { type: String, enum: ["Point"], default: "Point" },
+    coordinates: { type: [Number], required: true }
   },
-  {
-    timestamps: false
-  }
-);
+  heading: { type: Number, min: 0, max: 360, default: 0 },
+  speed: { type: Number, min: 0, default: 0 },
+  timestamp: { type: Date, required: true }
+});
 
-// 24-hour TTL index: MongoDB automatically expires documents 24 hours after their timestamp
 locationHistorySchema.index({ timestamp: 1 }, { expireAfterSeconds: 86400 });
 locationHistorySchema.index({ driverId: 1, timestamp: -1 });
 

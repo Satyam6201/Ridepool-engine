@@ -5,9 +5,9 @@ import { logger } from "shared";
 import { env } from "./config/env.js";
 import { connectDB, disconnectDB } from "./config/db.js";
 import { closeRedis } from "./config/redis.js";
-import { initKafka, disconnectKafka } from "./config/kafka.js";
-import { startLocationConsumer } from "./services/consumer.js";
-import { startStaleDriverCleanup, stopStaleDriverCleanup } from "./services/cleanup.js";
+import { initKafka, closeKafka } from "./config/kafka.js";
+import { runLocationConsumer } from "./services/consumer.js";
+import { startStaleCleanup, stopStaleCleanup } from "./services/cleanup.js";
 import healthRoutes from "./routes/health.js";
 import driverRoutes from "./routes/driver.js";
 import { errorHandler } from "./middleware/error.js";
@@ -20,40 +20,35 @@ app.use(express.json({ limit: "10kb" }));
 
 app.use(healthRoutes);
 app.use(driverRoutes);
-
 app.use(errorHandler);
 
 let server;
 
-async function bootstrap() {
+async function start() {
   try {
     await connectDB();
     await initKafka();
-    await startLocationConsumer();
-    startStaleDriverCleanup();
+    await runLocationConsumer();
+    startStaleCleanup();
 
     server = app.listen(env.PORT, () => {
-      logger.info("driver-service started successfully", {
-        port: env.PORT,
-        env: env.NODE_ENV
-      });
+      logger.info("driver-service started", { port: env.PORT, env: env.NODE_ENV });
     });
   } catch (err) {
-    logger.error("Failed to start driver-service", { error: err.message });
+    logger.error("Startup failed", { error: err.message });
     process.exit(1);
   }
 }
 
-async function shutdown(signal) {
-  logger.info(`${signal} received, gracefully shutting down driver-service`);
-  stopStaleDriverCleanup();
+async function stop(signal) {
+  logger.info(`${signal} received, stopping`);
+  stopStaleCleanup();
 
   if (server) {
     server.close(async () => {
-      await disconnectKafka();
+      await closeKafka();
       await closeRedis();
       await disconnectDB();
-      logger.info("driver-service terminated gracefully");
       process.exit(0);
     });
   } else {
@@ -61,7 +56,7 @@ async function shutdown(signal) {
   }
 }
 
-process.on("SIGTERM", () => shutdown("SIGTERM"));
-process.on("SIGINT", () => shutdown("SIGINT"));
+process.on("SIGTERM", () => stop("SIGTERM"));
+process.on("SIGINT", () => stop("SIGINT"));
 
-bootstrap();
+start();

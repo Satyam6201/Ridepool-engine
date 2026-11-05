@@ -1,75 +1,39 @@
 import { logger } from "shared";
 import { redis } from "../config/redis.js";
-import { REDIS_GEO_KEY, REDIS_LAST_PING_KEY } from "./consumer.js";
+import { GEO_KEY, PING_KEY } from "./consumer.js";
 
-let cleanupTimer = null;
+let timer = null;
 
-/**
- * Runs a single pass of stale driver cleanup.
- * Removes drivers from Redis GEO whose last ping is older than maxStaleMs.
- */
-export async function cleanupStaleDriversOnce(redisClient = redis, maxStaleMs = 30000) {
-  try {
-    const pings = await redisClient.hgetall(REDIS_LAST_PING_KEY);
-    if (!pings || Object.keys(pings).length === 0) {
-      return 0;
-    }
+export async function cleanStaleDrivers(client = redis, maxAge = 30000) {
+  const pings = await client.hgetall(PING_KEY);
+  if (!pings || Object.keys(pings).length === 0) return 0;
 
-    const now = Date.now();
-    const staleDriverIds = [];
+  const now = Date.now();
+  const stale = Object.entries(pings)
+    .filter(([_, time]) => now - Number(time) > maxAge)
+    .map(([id]) => id);
 
-    for (const [driverId, lastPingStr] of Object.entries(pings)) {
-      const lastPing = Number(lastPingStr);
-      if (now - lastPing > maxStaleMs) {
-        staleDriverIds.push(driverId);
-      }
-    }
+  if (stale.length === 0) return 0;
 
-    if (staleDriverIds.length === 0) {
-      return 0;
-    }
-
-    const pipeline = redisClient.multi();
-    for (const driverId of staleDriverIds) {
-      pipeline.zrem(REDIS_GEO_KEY, driverId);
-      pipeline.hdel(REDIS_LAST_PING_KEY, driverId);
-    }
-    await pipeline.exec();
-
-    logger.info("Removed stale drivers from Redis GEO", {
-      count: staleDriverIds.length,
-      driverIds: staleDriverIds
-    });
-
-    return staleDriverIds.length;
-  } catch (err) {
-    logger.error("Error running stale driver cleanup", { error: err.message });
-    return 0;
+  const pipe = client.multi();
+  for (const id of stale) {
+    pipe.zrem(GEO_KEY, id);
+    pipe.hdel(PING_KEY, id);
   }
+  await pipe.exec();
+
+  logger.info("Purged stale drivers", { count: stale.length });
+  return stale.length;
 }
 
-/**
- * Starts periodic stale driver cleanup job.
- */
-export function startStaleDriverCleanup(intervalMs = 10000, maxStaleMs = 30000) {
-  if (cleanupTimer) {
-    return;
-  }
-
-  cleanupTimer = setInterval(async () => {
-    await cleanupStaleDriversOnce(redis, maxStaleMs);
-  }, intervalMs);
-
-  logger.info("Stale driver cleanup job started", { intervalMs, maxStaleMs });
+export function startStaleCleanup(interval = 10000, maxAge = 30000) {
+  if (timer) return;
+  timer = setInterval(() => cleanStaleDrivers(redis, maxAge), interval);
 }
 
-/**
- * Stops periodic stale driver cleanup job.
- */
-export function stopStaleDriverCleanup() {
-  if (cleanupTimer) {
-    clearInterval(cleanupTimer);
-    cleanupTimer = null;
-    logger.info("Stale driver cleanup job stopped");
+export function stopStaleCleanup() {
+  if (timer) {
+    clearInterval(timer);
+    timer = null;
   }
 }

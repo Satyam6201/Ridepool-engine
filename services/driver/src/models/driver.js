@@ -12,49 +12,13 @@ const vehicleSchema = new mongoose.Schema(
   { _id: false }
 );
 
-const pointSchema = new mongoose.Schema(
-  {
-    type: {
-      type: String,
-      enum: ["Point"],
-      default: "Point"
-    },
-    coordinates: {
-      type: [Number], // [longitude, latitude]
-      default: [0, 0]
-    }
-  },
-  { _id: false }
-);
-
 const driverSchema = new mongoose.Schema(
   {
-    userId: {
-      type: String,
-      required: true,
-      unique: true,
-      index: true
-    },
-    name: {
-      type: String,
-      required: true,
-      trim: true
-    },
-    phone: {
-      type: String,
-      required: true,
-      trim: true
-    },
-    licenseNumber: {
-      type: String,
-      required: true,
-      trim: true,
-      uppercase: true
-    },
-    vehicle: {
-      type: vehicleSchema,
-      required: true
-    },
+    userId: { type: String, required: true, unique: true, index: true },
+    name: { type: String, required: true, trim: true },
+    phone: { type: String, required: true, trim: true },
+    licenseNumber: { type: String, required: true, trim: true, uppercase: true },
+    vehicle: { type: vehicleSchema, required: true },
     status: {
       type: String,
       enum: ["offline", "available", "on_trip"],
@@ -62,22 +26,13 @@ const driverSchema = new mongoose.Schema(
       index: true
     },
     currentLocation: {
-      type: pointSchema,
-      default: () => ({ type: "Point", coordinates: [0, 0] })
+      type: { type: String, enum: ["Point"], default: "Point" },
+      coordinates: { type: [Number], default: [0, 0] }
     },
-    heading: {
-      type: Number,
-      min: 0,
-      max: 360,
-      default: 0
-    },
-    lastPingAt: {
-      type: Date
-    }
+    heading: { type: Number, min: 0, max: 360, default: 0 },
+    lastPingAt: { type: Date }
   },
-  {
-    timestamps: true
-  }
+  { timestamps: true }
 );
 
 driverSchema.index({ currentLocation: "2dsphere" });

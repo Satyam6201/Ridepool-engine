@@ -1,42 +1,34 @@
 import { createKafkaClient, logger } from "shared";
 import { env } from "./env.js";
 
-export const TOPIC_DRIVER_LOCATIONS = "driver-locations";
-export const CONSUMER_GROUP_DRIVER = "driver-location-consumer";
+export const TOPIC_LOCATIONS = "driver-locations";
+export const GROUP_ID = "driver-location-consumer";
 
-export const kafkaClient = createKafkaClient({
+export const kafka = createKafkaClient({
   clientId: "driver-service",
   brokers: env.KAFKA_BROKERS
 });
 
-let consumerInstance = null;
+let consumer = null;
 
 export async function initKafka() {
-  await kafkaClient.connectProducer();
+  await kafka.connectProducer();
 }
 
-export async function publishDriverLocation(driverId, locationData) {
-  // Partitioned by driverId so all location pings for the same driver stay strictly in-order
-  await kafkaClient.publish(TOPIC_DRIVER_LOCATIONS, locationData, driverId);
+export async function sendLocation(driverId, data) {
+  await kafka.publish(TOPIC_LOCATIONS, data, driverId);
 }
 
-export async function subscribeToDriverLocations(onMessage) {
-  consumerInstance = await kafkaClient.createConsumer(
-    CONSUMER_GROUP_DRIVER,
-    [TOPIC_DRIVER_LOCATIONS],
-    onMessage
-  );
-  return consumerInstance;
+export async function startConsumer(onMessage) {
+  consumer = await kafka.createConsumer(GROUP_ID, [TOPIC_LOCATIONS], onMessage);
+  return consumer;
 }
 
-export async function disconnectKafka() {
+export async function closeKafka() {
   try {
-    if (consumerInstance) {
-      await consumerInstance.disconnect();
-    }
-    await kafkaClient.disconnect();
-    logger.info("Kafka connections closed successfully");
+    if (consumer) await consumer.disconnect();
+    await kafka.disconnect();
   } catch (err) {
-    logger.error("Error disconnecting Kafka", { error: err.message });
+    logger.error("Error closing Kafka", { error: err.message });
   }
 }

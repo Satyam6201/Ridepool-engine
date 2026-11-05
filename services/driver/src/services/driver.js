@@ -1,29 +1,21 @@
 import { NotFoundError, BadRequestError } from "shared";
 import { Driver } from "../models/driver.js";
 import { redis } from "../config/redis.js";
-import { REDIS_GEO_KEY, REDIS_LAST_PING_KEY } from "./consumer.js";
+import { GEO_KEY, PING_KEY } from "./consumer.js";
 
-/**
- * Retrieves driver profile by authenticated user ID.
- */
-export async function getDriverProfile(userId) {
+export async function getProfile(userId) {
   const driver = await Driver.findOne({ userId }).lean();
-  if (!driver) {
-    throw new NotFoundError("Driver profile not found");
-  }
+  if (!driver) throw new NotFoundError("Driver profile not found");
   return driver;
 }
 
-/**
- * Creates or updates a driver profile with vehicle details.
- */
-export async function upsertDriverProfile(userId, data) {
+export async function saveProfile(userId, data) {
   const existing = await Driver.findOne({ userId });
 
   if (existing) {
-    existing.name = data.name || existing.name;
-    existing.phone = data.phone || existing.phone;
-    existing.licenseNumber = data.licenseNumber || existing.licenseNumber;
+    if (data.name) existing.name = data.name;
+    if (data.phone) existing.phone = data.phone;
+    if (data.licenseNumber) existing.licenseNumber = data.licenseNumber;
     if (data.vehicle) {
       existing.vehicle = { ...existing.vehicle.toObject(), ...data.vehicle };
     }
@@ -44,51 +36,30 @@ export async function upsertDriverProfile(userId, data) {
   return driver;
 }
 
-/**
- * Updates driver status (offline, available, on_trip).
- * Syncs with Redis cache and removes driver from Redis GEO if not available.
- */
-export async function updateDriverStatus(userId, status) {
-  const validStatuses = ["offline", "available", "on_trip"];
-  if (!validStatuses.includes(status)) {
-    throw new BadRequestError(`Invalid status. Must be one of: ${validStatuses.join(", ")}`);
+export async function updateStatus(userId, status) {
+  const valid = ["offline", "available", "on_trip"];
+  if (!valid.includes(status)) {
+    throw new BadRequestError(`Invalid status. Must be one of: ${valid.join(", ")}`);
   }
 
-  const driver = await Driver.findOneAndUpdate(
-    { userId },
-    { status },
-    { new: true }
-  );
+  const driver = await Driver.findOneAndUpdate({ userId }, { status }, { new: true });
+  if (!driver) throw new NotFoundError("Driver profile not found");
 
-  if (!driver) {
-    throw new NotFoundError("Driver profile not found");
-  }
-
-  // Update Redis status cache
   await redis.set(`driver:status:${userId}`, status, "EX", 86400);
 
-  // If driver goes offline or is on_trip, immediately purge from available GEO index
   if (status !== "available") {
-    await redis
-      .multi()
-      .zrem(REDIS_GEO_KEY, userId)
-      .hdel(REDIS_LAST_PING_KEY, userId)
-      .exec();
+    await redis.multi().zrem(GEO_KEY, userId).hdel(PING_KEY, userId).exec();
   }
 
   return driver;
 }
 
-/**
- * Finds nearby available drivers using Redis GEO.
- */
-export async function findNearbyDrivers(lng, lat, radiusKm = 5, limit = 10) {
-  // Use GEORADIUS or GEOSEARCH on Redis GEO index
-  const results = await redis.georadius(
-    REDIS_GEO_KEY,
+export async function findNearby(lng, lat, radius = 5, limit = 10) {
+  const raw = await redis.georadius(
+    GEO_KEY,
     lng,
     lat,
-    radiusKm,
+    radius,
     "km",
     "WITHDIST",
     "WITHCOORD",
@@ -97,24 +68,22 @@ export async function findNearbyDrivers(lng, lat, radiusKm = 5, limit = 10) {
     limit
   );
 
-  if (!results || results.length === 0) {
-    return [];
-  }
+  if (!raw || raw.length === 0) return [];
 
-  const driverIds = results.map((r) => r[0]);
-  const profiles = await Driver.find({ userId: { $in: driverIds } })
+  const ids = raw.map(([id]) => id);
+  const drivers = await Driver.find({ userId: { $in: ids } })
     .select("userId name phone vehicle rating currentLocation")
     .lean();
 
-  const profileMap = new Map(profiles.map((p) => [p.userId, p]));
+  const map = new Map(drivers.map((d) => [d.userId, d]));
 
-  return results.map(([id, distance, coords]) => ({
+  return raw.map(([id, distance, coords]) => ({
     driverId: id,
     distanceKm: parseFloat(distance),
     location: {
       lng: parseFloat(coords[0]),
       lat: parseFloat(coords[1])
     },
-    driver: profileMap.get(id) || null
+    driver: map.get(id) || null
   }));
 }
