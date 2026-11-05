@@ -14,7 +14,11 @@ const envSchema = z.object({
   JWT_ACCESS_SECRET: z.string().min(32, "JWT_ACCESS_SECRET must be at least 32 chars"),
   JWT_REFRESH_SECRET: z.string().min(32, "JWT_REFRESH_SECRET must be at least 32 chars"),
   JWT_ACCESS_EXPIRES_IN: z.string().default("15m"),
-  JWT_REFRESH_EXPIRES_DAYS: z.coerce.number().default(7)
+  JWT_REFRESH_EXPIRES_DAYS: z.coerce.number().default(7),
+  ADMIN_EMAIL: z.string().email().default("admin@ridepool.com"),
+  ADMIN_PASSWORD: z.string().min(8).default("Admin#Pool2026!"),
+  LOCKOUT_THRESHOLD: z.coerce.number().default(5),
+  LOCKOUT_WINDOW_SECONDS: z.coerce.number().default(900)
 });
 
 export const env = validateEnv(envSchema);

@@ -4,6 +4,8 @@ import cors from "cors";
 import { logger } from "shared";
 import { env } from "./config/env.js";
 import { connectDB, disconnectDB } from "./config/db.js";
+import { disconnectRedis } from "./config/redis.js";
+import { initKafka, disconnectKafka } from "./config/kafka.js";
 import healthRoutes from "./routes/health.js";
 import authRoutes from "./routes/auth.js";
 import { errorHandler } from "./middleware/error.js";
@@ -21,14 +23,17 @@ app.use("/api/auth", authRoutes);
 app.use(errorHandler);
 
 await connectDB();
+await initKafka();
 
 const server = app.listen(env.PORT, () => {
   logger.info("auth service started", { port: env.PORT, env: env.NODE_ENV });
 });
 
 async function shutdown() {
-  logger.info("Closing auth service");
+  logger.info("Closing auth service gracefully");
   server.close(async () => {
+    await disconnectKafka();
+    await disconnectRedis();
     await disconnectDB();
     process.exit(0);
   });

@@ -1,41 +1,21 @@
-import crypto from "node:crypto";
-import {
-  UnauthorizedError,
-  ForbiddenError,
-  NotFoundError,
-  ConflictError
-} from "shared";
+import { ConflictError, NotFoundError, logger } from "shared";
 import { User } from "../models/user.js";
-import { RefreshToken } from "../models/token.js";
-import { hashPassword, comparePassword, hashToken, generateRandomToken } from "../utils/hash.js";
-import { signAccessToken } from "../utils/jwt.js";
-import { env } from "../config/env.js";
+import { hashPassword, comparePassword } from "./password.js";
+import {
+  signAccessToken,
+  createRefreshToken,
+  rotateRefreshToken,
+  revokeRefreshToken,
+  revokeAllUserTokens
+} from "./token.js";
+import { checkLockout, recordFailedLogin, resetFailedLogins } from "./lockout.js";
+import { publishUserRegistered } from "./event.js";
 
-function buildTokenExpiry() {
-  const expiry = new Date();
-  expiry.setDate(expiry.getDate() + env.JWT_REFRESH_EXPIRES_DAYS);
-  return expiry;
-}
-
-async function createRefreshTokenRecord(userId, family) {
-  const rawToken = generateRandomToken(40);
-  const tokenHash = hashToken(rawToken);
-
-  await RefreshToken.create({
-    userId,
-    tokenHash,
-    family: family || crypto.randomUUID(),
-    expiresAt: buildTokenExpiry()
-  });
-
-  return rawToken;
-}
-
-export async function register({ name, email, password, role = "rider", phone = "" }) {
+export async function register({ name, email, password, role = "rider", phone = "" }, ip = "unknown") {
   const normalizedEmail = email.toLowerCase().trim();
-  const existingUser = await User.findOne({ email: normalizedEmail });
 
-  if (existingUser) {
+  const existing = await User.findOne({ email: normalizedEmail });
+  if (existing) {
     throw new ConflictError("Email already registered");
   }
 
@@ -54,7 +34,16 @@ export async function register({ name, email, password, role = "rider", phone = 
     role: user.role
   });
 
-  const refreshToken = await createRefreshTokenRecord(user._id);
+  const refreshToken = await createRefreshToken(user._id);
+
+  await publishUserRegistered(user);
+
+  logger.info("AUDIT: User registered", {
+    userId: user.id,
+    email: user.email,
+    role: user.role,
+    ip
+  });
 
   return {
     user: user.toJSON(),
@@ -63,18 +52,23 @@ export async function register({ name, email, password, role = "rider", phone = 
   };
 }
 
-export async function login({ email, password }) {
+export async function login({ email, password }, ip = "unknown") {
   const normalizedEmail = email.toLowerCase().trim();
+
+  await checkLockout(normalizedEmail, ip);
+
   const user = await User.findOne({ email: normalizedEmail }).select("+password");
 
   if (!user) {
-    throw new UnauthorizedError("Invalid email or password");
+    await recordFailedLogin(normalizedEmail, ip);
   }
 
-  const isValidPassword = await comparePassword(password, user.password);
-  if (!isValidPassword) {
-    throw new UnauthorizedError("Invalid email or password");
+  const isValid = await comparePassword(password, user.password);
+  if (!isValid) {
+    await recordFailedLogin(normalizedEmail, ip);
   }
+
+  await resetFailedLogins(normalizedEmail);
 
   const accessToken = signAccessToken({
     id: user.id,
@@ -82,7 +76,14 @@ export async function login({ email, password }) {
     role: user.role
   });
 
-  const refreshToken = await createRefreshTokenRecord(user._id);
+  const refreshToken = await createRefreshToken(user._id);
+
+  logger.info("AUDIT: User logged in", {
+    userId: user.id,
+    email: user.email,
+    role: user.role,
+    ip
+  });
 
   return {
     user: user.toJSON(),
@@ -91,66 +92,18 @@ export async function login({ email, password }) {
   };
 }
 
-export async function rotateRefreshToken(rawToken) {
-  const incomingHash = hashToken(rawToken);
-  const tokenRecord = await RefreshToken.findOne({ tokenHash: incomingHash });
-
-  if (!tokenRecord) {
-    throw new UnauthorizedError("Invalid refresh token");
-  }
-
-  // If a revoked token is used, someone replayed an old token. Invalidate the whole family.
-  if (tokenRecord.revokedAt) {
-    await RefreshToken.updateMany(
-      { family: tokenRecord.family, revokedAt: null },
-      { $set: { revokedAt: new Date() } }
-    );
-    throw new ForbiddenError("Refresh token reuse detected, access revoked");
-  }
-
-  if (tokenRecord.expiresAt < new Date()) {
-    throw new UnauthorizedError("Refresh token expired");
-  }
-
-  const user = await User.findById(tokenRecord.userId);
-  if (!user) {
-    throw new UnauthorizedError("User no longer exists");
-  }
-
-  const newRawToken = generateRandomToken(40);
-  const newHash = hashToken(newRawToken);
-
-  tokenRecord.revokedAt = new Date();
-  tokenRecord.replacedBy = newHash;
-  await tokenRecord.save();
-
-  await RefreshToken.create({
-    userId: user._id,
-    tokenHash: newHash,
-    family: tokenRecord.family,
-    expiresAt: buildTokenExpiry()
-  });
-
-  const newAccessToken = signAccessToken({
-    id: user.id,
-    email: user.email,
-    role: user.role
-  });
-
-  return {
-    accessToken: newAccessToken,
-    refreshToken: newRawToken
-  };
+export async function refresh(rawToken, ip = "unknown") {
+  return rotateRefreshToken(rawToken, ip);
 }
 
-export async function logout(rawToken) {
-  if (!rawToken) return;
+export async function logout(rawToken, ip = "unknown") {
+  await revokeRefreshToken(rawToken);
+  logger.info("AUDIT: User logged out", { ip });
+}
 
-  const incomingHash = hashToken(rawToken);
-  await RefreshToken.updateOne(
-    { tokenHash: incomingHash, revokedAt: null },
-    { $set: { revokedAt: new Date() } }
-  );
+export async function logoutAll(userId, ip = "unknown") {
+  await revokeAllUserTokens(userId);
+  logger.info("AUDIT: User logged out all devices", { userId, ip });
 }
 
 export async function getProfile(userId) {

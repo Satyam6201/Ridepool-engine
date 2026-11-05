@@ -10,3 +10,4 @@ export {
 export { validateEnv } from "./env.js";
 export { createKafkaClient } from "./kafka.js";
 export { createRedisClient } from "./redis.js";
+export { authenticate, authorize } from "./auth.js";
