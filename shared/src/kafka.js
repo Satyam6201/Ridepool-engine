@@ -8,9 +8,10 @@ export function createKafkaClient({ clientId, brokers }) {
     clientId,
     brokers: brokerList,
     logLevel: logLevel.NOTHING,
+    connectionTimeout: 2000,
     retry: {
-      initialRetryTime: 300,
-      retries: 8
+      initialRetryTime: 100,
+      retries: 2
     }
   });
 
